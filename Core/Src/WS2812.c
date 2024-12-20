@@ -5,13 +5,13 @@
 #define hdma_tim_ch hdma_tim2_ch1
 #define htim_ch TIM_CHANNEL_1
 
-#define buffer_len  24
+#define buffer_len  25
 
 extern DMA_HandleTypeDef hdma_tim2_ch1;
 
 
-static uint8_t __attribute__((aligned(2))) buf_1[buffer_len] = {0};
-static uint8_t __attribute__((aligned(2))) buf_2[buffer_len] = {0};
+static uint8_t  buf_1[buffer_len] = {0};
+static uint8_t  buf_2[buffer_len] = {0};
 
 uint8_t WS2812_TC_flag = 0;
 

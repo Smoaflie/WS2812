@@ -103,16 +103,23 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   WS2812_INIT();
   HAL_Delay(100);
-  WS2812_Turn_Off(500);
+  // WS2812_Turn_Off(10000);
+    // WS2812_Test_Colorful(100, 0x00FF00, 0);
   
   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin,GPIO_PIN_RESET);
   
   while (1) {
     static uint32_t i = 0;
-    if(++i > 1000000)
+    if(++i > 100000)
     {
+      static uint32_t color = 0x00FF00;
+      static uint32_t offset = 0x020304;
+      static uint8_t reverse = 0;
+      color += reverse ? -offset : offset;
+      if(color > 0xFF0000 || color < 0) reverse=!reverse;
+
       i = 0;
-      WS2812_Test_Colorful(100, 0x00FF00, 10);
+      WS2812_Test_Colorful(300, color, offset);
     }
     WS2812_Detect();
     /* USER CODE END WHILE */
