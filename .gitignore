@@ -14,7 +14,6 @@
 *.ept
 *.eide-template
 
-.eide
 .vscode
 .clang-format
 .clangd
