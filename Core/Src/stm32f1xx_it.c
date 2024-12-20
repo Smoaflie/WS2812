@@ -22,6 +22,7 @@
 #include "stm32f1xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "WS2812.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -204,17 +205,7 @@ void SysTick_Handler(void)
 void DMA1_Channel5_IRQHandler(void)
 {
   /* USER CODE BEGIN DMA1_Channel5_IRQn 0 */
-  // 检查传输完成标志位
-  if (__HAL_DMA_GET_FLAG(&hdma_tim2_ch1, DMA_FLAG_TC5)) {
-    // 清除传输完成标志位
-    __HAL_DMA_CLEAR_FLAG(&hdma, DMA_FLAG_TC5);
-
-    extern TIM_HandleTypeDef htim2;
-    HAL_TIM_PWM_Stop_DMA(&htim2, TIM_CHANNEL_1);  // 停止定时器 PWM 和 DMA
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);  // 清零比较值
-    __HAL_TIM_SET_COUNTER(&htim2, 0);  // 将计数器值重置为 0
-    HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-  }
+  WS2812_DMA_TC_CALLBACK();
   /* USER CODE END DMA1_Channel5_IRQn 0 */
   HAL_DMA_IRQHandler(&hdma_tim2_ch1);
   /* USER CODE BEGIN DMA1_Channel5_IRQn 1 */

@@ -1,99 +1,192 @@
 #include "WS2812.h"
 #include "string.h"
 
-// 往flash内写入数据
-void WS2812_Write(uint32_t addr, uint16_t val){
-  while(FLASH_WaitForLastOperation(FLASH_TIMEOUT_VALUE) != HAL_OK);
-  SET_BIT(FLASH->CR, FLASH_CR_PG);
-  *(__IO uint16_t*)addr      = val;
-}
+#define htim htim2
+#define hdma_tim_ch hdma_tim2_ch1
+#define htim_ch TIM_CHANNEL_1
+
+#define buffer_len  24
+
+extern DMA_HandleTypeDef hdma_tim2_ch1;
+
+
+static uint8_t __attribute__((aligned(2))) buf_1[buffer_len] = {0};
+static uint8_t __attribute__((aligned(2))) buf_2[buffer_len] = {0};
+
+uint8_t WS2812_TC_flag = 0;
+
+typedef enum{
+  FREE = 0,
+  BLOCK,
+  OFFSET,
+}WS2812_DETECT_MODE_;
+struct{
+  uint32_t index;
+  uint32_t total;
+  WS2812_CONTROL_BLOCK* block;
+  uint32_t block_len;
+  uint32_t block_index;
+
+  uint32_t offset;
+  uint32_t color;
+  
+  WS2812_DETECT_MODE_ mode;
+}WS2812_DETECT_S_;
 /**
  * 函数：WS2812灯数据设置函数
  * 参数：addr:待写入的地址, num:灯的数量，color:按RGB的顺序排列，取低24位
  * 作用：往对应地址写入WS2812的数据
 ***/
-uint32_t WS2812_Set(uint32_t addr, uint16_t num, uint32_t color)
+void WS2812_Set(uint8_t* buf, uint32_t color)
 {
   uint16_t R,G,B;
   R = (color & 0xFF0000) >> 16;
   G = (color & 0x00FF00) >> 8;
   B = (color & 0x0000FF) >> 0;
-  while(num > 0){
-    for (uint8_t i = 0;i < 8;i++)
-    {
-      //填充数组
-      WS2812_Write(addr + 2*i,          (G << i) & (0x80)?WS_H:WS_L);
-      WS2812_Write(addr + 2*(i + 8),    (R << i) & (0x80)?WS_H:WS_L);
-      WS2812_Write(addr + 2*(i + 16),   (B << i) & (0x80)?WS_H:WS_L);
-    }
-    addr += 2*24;
-    num--;
+  for (uint8_t i = 0;i < 8;i++)
+  {
+    //填充数组
+    buf[i]  =          (G << i) & (0x80)?WS_H:WS_L;
+    buf[i + 8]=    (R << i) & (0x80)?WS_H:WS_L;
+    buf[i + 16]=   (B << i) & (0x80)?WS_H:WS_L;
   }
-  return addr;
 }
-//数据初始化
-void WS2812_Init()
-{
-  if((*((uint16_t*)(WriteAddr)) & 0xFFFF) == 0xABCD)  {
-    /* 通过标志位判断是否完成初始化 */
-    return; 
-  }
-  uint32_t flash_erase_error;
-  FLASH_EraseInitTypeDef flash_erase_init = {
-    .TypeErase = FLASH_TYPEERASE_PAGES,
-    .Banks = FLASH_BANK_1,
-    .PageAddress = WriteAddr,
-    .NbPages = (EndAddr - WriteAddr)/0x400 + 1
-  };
-  HAL_FLASHEx_Erase(&flash_erase_init, &flash_erase_error);
-  while (__HAL_FLASH_GET_FLAG(FLASH_FLAG_BSY)) {
-      /* 等待 BSY 标志位清除 */
-  }
-  // 空帧 & 侧位单帧
-  WS2812_Set(EMPTY_FRAME_ADDR, WS2812_MAX_NUM,0x00);
-  WS2812_Set(POS_TEST_ADDR, 1,0xFF0000);
-  // 炫彩RGB
-  uint32_t offset = (0xFFFFFF/WS2812_MAX_NUM);
-  for(uint8_t j = 0; j < 2; j++){
-    uint32_t color = 0;
-    for(uint16_t i = 0; i < WS2812_MAX_NUM; i++){
-      color+=offset;
-      WS2812_Set(COLORFUL_ADDR+(j*WS2812_MAX_NUM+i)*48, 1, color);
-    }
-  }
 
-  WS2812_Write(WriteAddr,0xABCD);
-}
-//开启传输
-void WS2812_Start(const uint32_t addr, uint32_t len)
+//初始化-利用HAL库快速配置寄存器
+//移植的时候记得加延时
+void WS2812_INIT()
 {
-  HAL_TIM_PWM_Stop_DMA(&htim2, TIM_CHANNEL_1);  // 停止定时器 PWM 和 DMA
-  //作用：调用DMA将显存中的内容实时搬运至定时器的比较寄存器
-  HAL_TIM_PWM_Start_DMA(&htim2,TIM_CHANNEL_1,(const uint32_t *)addr,len*24); 
+  memset(&WS2812_DETECT_S_, 0, sizeof(WS2812_DETECT_S_));
+
+  memset(buf_1, 0, sizeof(buf_1));
+  memset(buf_2, 0, sizeof(buf_2));
+  HAL_TIM_PWM_Start_DMA(&htim, htim_ch, (const uint32_t *)buf_1,  buffer_len+1);
 }
+
+
+
+//配置DMA
+void WS2812_DMA_START(uint32_t SrcAddress, uint32_t DataLength)
+{
+  //失能DMA
+  __HAL_DMA_DISABLE(&hdma_tim_ch);
+  //配置寄存器
+  /* Configure DMA Channel data length */
+  (&hdma_tim2_ch1)->Instance->CNDTR = DataLength+1;
+  /* Configure DMA Channel source address */
+  (&hdma_tim2_ch1)->Instance->CMAR = SrcAddress;
+  //开启传输完成中断 & 使能DMA
+  __HAL_DMA_ENABLE_IT(&hdma_tim_ch, DMA_IT_TC);
+  __HAL_DMA_ENABLE(&hdma_tim_ch);
+}
+
+// DMA传输完成中断回调
+void WS2812_DMA_TC_CALLBACK()
+{
+  WS2812_TC_flag = 1;
+  //清理PWM比较器值
+  (&htim)->Instance->CCR1 = 0;
+
+  //清除传输完成标志位
+  // __HAL_DMA_CLEAR_FLAG(&hdma_tim_ch, __HAL_DMA_GET_TC_FLAG_INDEX(&hdma_tim_ch));
+}
+
+//开始传输
+void WS2812_START_by_BLOCK(uint32_t WS2812_num, WS2812_CONTROL_BLOCK* block, uint32_t block_len)
+{
+  WS2812_DETECT_S_.total = WS2812_num;
+  WS2812_DETECT_S_.mode = BLOCK;
+  WS2812_DETECT_S_.block = block;
+  WS2812_DETECT_S_.block_len = block_len;
+
+  memset(buf_1, 0, sizeof(buf_1));
+  memset(buf_2, 0, sizeof(buf_2));
+}
+
 //关闭所有灯
-void WS2812_Turn_Off()
+void WS2812_Turn_Off(uint32_t num)
 {
-  WS2812_Start(EMPTY_FRAME_ADDR,WS2812_MAX_NUM+1);
+  WS2812_START_by_BLOCK(num, NULL, 0);
 }
-//测试灯珠位置-索引从1开始
-void WS2812_Test_Position(const uint32_t pos)
+//测试灯珠-位置-索引从1开始
+void WS2812_Test_Position(uint32_t num, uint32_t color)
 {
-  static uint32_t current_pos = 0;
-  if(current_pos != pos){
-    WS2812_Turn_Off();
-    HAL_Delay(500);
-    current_pos = pos;
-  }
-  WS2812_Start(POS_TEST_ADDR-(pos-1)*48, pos);
+  static WS2812_CONTROL_BLOCK block;
+    block.start = num;
+    block.end = num;
+    block.color = color;
+  WS2812_START_by_BLOCK(num, &block, 1);
 }
-//RGB！
-void WS2812_RGB()
+//测试灯珠-单色-索引从1开始
+void WS2812_Test_FullColor(uint32_t num, uint32_t color)
 {
-  static int32_t count = 0;
-  static uint8_t flag = 1;
-  count += flag ? 1 : -1;
-  if(count > WS2812_MAX_NUM || count < 0) flag = !flag;
+  static WS2812_CONTROL_BLOCK block;
+    block.start = 1;
+    block.end = num;
+    block.color = color;
+  WS2812_START_by_BLOCK(num, &block, 1);
+}
+//彩灯
+void WS2812_Test_Colorful(uint32_t num, uint32_t color, uint32_t offset)
+{
+  WS2812_DETECT_S_.total = num;
+  WS2812_DETECT_S_.mode = OFFSET;
+  WS2812_DETECT_S_.color = color;
+  WS2812_DETECT_S_.offset = offset;
 
-  WS2812_Start(COLORFUL_ADDR+count, WS2812_MAX_NUM);
+  memset(buf_1, 0, sizeof(buf_1));
+  memset(buf_2, 0, sizeof(buf_2));
+}
+
+//循环执行，自动完成WS2812控制工作
+void WS2812_Detect()
+{
+  if(WS2812_DETECT_S_.mode == FREE) return;
+
+  if(WS2812_TC_flag)
+  {
+    WS2812_TC_flag = 0;
+
+    uint32_t buf = (const uint32_t)(hdma_tim_ch.Instance->CMAR == (const uint32_t)buf_1 ? buf_2 : buf_1);
+    WS2812_DMA_START(buf, buffer_len);
+
+    buf = (const uint32_t)(hdma_tim_ch.Instance->CMAR == (const uint32_t)buf_1 ? buf_2 : buf_1);
+    uint32_t index = ++WS2812_DETECT_S_.index;
+    if(index > WS2812_DETECT_S_.total)
+    {
+      memset(&WS2812_DETECT_S_, 0, sizeof(WS2812_DETECT_S_));
+      return;
+    }
+    
+    switch(WS2812_DETECT_S_.mode)
+    {
+      default:
+      case FREE:
+        return;
+
+      case BLOCK:
+        WS2812_CONTROL_BLOCK* block = WS2812_DETECT_S_.block;
+        uint32_t block_index = WS2812_DETECT_S_.block_index;
+
+        uint8_t struct_in_range_flag = block_index < WS2812_DETECT_S_.block_len;
+
+        if(struct_in_range_flag &&  index >= block[block_index].start && index <= block[block_index].end)
+          WS2812_Set((uint8_t * )buf, block[block_index].color);
+        else
+          WS2812_Set((uint8_t * )buf, 0x00);
+
+        while (struct_in_range_flag && index>block[block_index].end)  {
+          WS2812_DETECT_S_.block_index++;
+        }
+        return;
+
+      case OFFSET:
+        static uint8_t reverse = 0;
+        WS2812_DETECT_S_.color += reverse ? -WS2812_DETECT_S_.offset : WS2812_DETECT_S_.offset;
+        if(WS2812_DETECT_S_.color > 0xFF0000 || WS2812_DETECT_S_.color < 0) reverse=!reverse;
+        
+        WS2812_Set((uint8_t * )buf, WS2812_DETECT_S_.color);
+        return;
+    }
+  }
 }

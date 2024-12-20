@@ -46,11 +46,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-uint16_t led_index[][2] = {
-    {0,50},
-};
-uint16_t leds_num = 10;
-uint8_t color = 'R';
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -99,30 +95,26 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin,GPIO_PIN_RESET);
   HAL_Delay(1000);
-  
+  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin,GPIO_PIN_SET);
+  HAL_Delay(1000);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  HAL_FLASH_Unlock();
-  WS2812_Init();
-  // uint32_t addr = WriteAddr;
-  // WS2812_Set(addr+8, 10, 0xFF0000);
-  HAL_FLASH_Lock();
-
-  HAL_Delay(1000);
-  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin,GPIO_PIN_SET);
-  HAL_Delay(1000);
+  WS2812_INIT();
+  HAL_Delay(100);
+  WS2812_Turn_Off(500);
+  
   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin,GPIO_PIN_RESET);
   
   while (1) {
-    static uint32_t pos = 1;
-    WS2812_Test_Position(pos);
-    pos++;
-    // WS2812_RGB();
-    HAL_Delay(100);
-    // WS2812_Start();
-    // HAL_Delay(10000);
+    static uint32_t i = 0;
+    if(++i > 1000000)
+    {
+      i = 0;
+      WS2812_Test_Colorful(100, 0x00FF00, 10);
+    }
+    WS2812_Detect();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
