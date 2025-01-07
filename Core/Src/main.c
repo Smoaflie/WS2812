@@ -19,18 +19,25 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "dma.h"
+#include "i2c.h"
 #include "tim.h"
+#include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "oled.h"
 #include "WS2812.h"
 #include "string.h"
+#include "SEGGER_RTT.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+#define LOG(fmt, ...) SEGGER_RTT_printf(0, fmt "\r\n%s", \
+                          ##__VA_ARGS__,                          \
+                          RTT_CTRL_RESET)
+uint8_t receive_buf[255];
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -58,7 +65,32 @@ void Image_Display_with_LED_Num(uint16_t leds_num, uint8_t color);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* Prevent unused argument(s) compilation warning */
+  UNUSED(htim);
 
+  /* NOTE : This function should not be modified, when the callback is needed,
+            the HAL_TIM_PeriodElapsedCallback could be implemented in the user file
+   */
+}
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
+{
+  /* Prevent unused argument(s) compilation warning */
+  UNUSED(huart);
+  const uint8_t c[] = "Receive.";
+  HAL_UART_Transmit(&huart3, c, sizeof(c), 10);
+  
+  WS2812_Decoder(receive_buf);
+
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart3, receive_buf, sizeof(receive_buf));
+  __HAL_DMA_DISABLE_IT((&huart3)->hdmarx, DMA_IT_HT);
+  // HAL_UARTEx_ReceiveToIdle_DMA(&huart3, receive_buf, 255);
+  
+  /* NOTE: This function should not be modified, when the callback is needed,
+           the HAL_UART_RxCpltCallback could be implemented in the user file
+   */
+}
 /* USER CODE END 0 */
 
 /**
@@ -92,11 +124,23 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_TIM2_Init();
+  MX_I2C1_Init();
+  MX_TIM1_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
+  const uint8_t c[] = "start.";
+  HAL_TIM_Base_Start_IT(&htim1);
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart3, receive_buf, sizeof(receive_buf));
+  __HAL_DMA_DISABLE_IT((&huart3)->hdmarx, DMA_IT_HT);
+  HAL_UART_Transmit(&huart3, c, sizeof(c), 10);
+  
   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin,GPIO_PIN_RESET);
   HAL_Delay(1000);
   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin,GPIO_PIN_SET);
   HAL_Delay(1000);
+
+  OLED_Init();
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -104,27 +148,35 @@ int main(void)
   WS2812_INIT();
   HAL_Delay(100);
   // WS2812_Turn_Off(10000);
-    // WS2812_Test_Colorful(100, 0x00FF00, 0);
+  WS2812_Test_Colorful(100, 0x00FF00, 0);
   
   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin,GPIO_PIN_RESET);
   
   while (1) {
-    static uint32_t i = 0;
-    if(++i > 100000)
-    {
-      static uint32_t color = 0x00FF00;
-      static uint32_t offset = 0x020304;
-      static uint8_t reverse = 0;
-      color += reverse ? -offset : offset;
-      if(color > 0xFF0000 || color < 0) reverse=!reverse;
-
-      i = 0;
-      WS2812_Test_Colorful(300, color, offset);
-    }
-    WS2812_Detect();
+    static uint16_t pos = 1,last_pos = 1;
+    // if(HAL_GPIO_ReadPin(KEY_1_GPIO_Port, KEY_1_Pin) == GPIO_PIN_RESET ||
+    //     HAL_GPIO_ReadPin(KEY_2_GPIO_Port, KEY_2_Pin) == GPIO_PIN_RESET)
+    // {
+    //   HAL_Delay(100);
+    //   if(HAL_GPIO_ReadPin(KEY_1_GPIO_Port, KEY_1_Pin) == GPIO_PIN_RESET)  pos++;
+    //   else if(HAL_GPIO_ReadPin(KEY_2_GPIO_Port, KEY_2_Pin) == GPIO_PIN_RESET)  pos--;
+    //   if(pos == 0)  pos = 1;
+    //     OLED_ShowChar(10, 10, (pos/1000%10)+'0', 12);
+    //     OLED_ShowChar(20, 10, (pos/100%10)+'0', 12);
+    //     OLED_ShowChar(30, 10, (pos/10%10)+'0', 12);
+    //     OLED_ShowChar(40, 10, (pos/1%10)+'0', 12);
+    //     OLED_Refresh();
+    // }
+    // else if(last_pos != pos)
+    // {
+    //   last_pos = pos;
+    //   WS2812_Test_Position(pos , 0xFF0000,1000);
+    // }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    WS2812_Detect();
+  
   }
   /* USER CODE END 3 */
 }

@@ -4,7 +4,8 @@
   "dependenceList": [],
   "srcDirs": [
     "Core",
-    "Drivers"
+    "Drivers",
+    "User"
   ],
   "virtualFolder": {
     "name": "<virtual_root>",
@@ -54,7 +55,8 @@
           "Drivers/CMSIS/Device/ST/STM32F1xx/Include",
           "Drivers/CMSIS/Include",
           "User/WS2812",
-          "User/OLED"
+          "User/OLED",
+          "User/RTT"
         ],
         "libList": [],
         "defineList": [
@@ -69,7 +71,7 @@
           "beforeBuildTasks": [],
           "afterBuildTasks": [],
           "global": {
-            "$float-abi-type": "softfp",
+            "$float-abi-type": "hard",
             "output-debug-info": "enable"
           },
           "c/cpp-compiler": {
@@ -78,7 +80,8 @@
             "optimization": "level-0",
             "warnings": "all-warnings",
             "one-elf-section-per-function": true,
-            "one-elf-section-per-data": true
+            "one-elf-section-per-data": true,
+            "C_FLAGS": "--specs=nano.specs -u _printf_float"
           },
           "asm-compiler": {
             "ASM_FLAGS": "-DDEBUG"
