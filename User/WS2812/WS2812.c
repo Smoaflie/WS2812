@@ -3,17 +3,19 @@
 
 /* 自定义的日志系统 */
 #include "SEGGER_RTT.h"
-#define WS2812_LOG_INIT() SEGGER_RTT_Init()
-#define WS2812_LOG(fmt, ...) SEGGER_RTT_printf(0, fmt "\r\n%s", \
-                          ##__VA_ARGS__,                          \
-                          RTT_CTRL_RESET)
+#define WS2812_LOG_INIT() 
+#define WS2812_LOG(fmt, ...) 
+// #define WS2812_LOG_INIT() SEGGER_RTT_Init()
+// #define WS2812_LOG(fmt, ...) SEGGER_RTT_printf(0, fmt "\r\n%s", \
+//                           ##__VA_ARGS__,                          \
+//                           RTT_CTRL_RESET)
 
 
 #define htim        htim2
 #define hdma_tim_ch hdma_tim2_ch1
 #define htim_ch     TIM_CHANNEL_1
 
-#define buffer_len  25
+#define buffer_len  28
 
 extern DMA_HandleTypeDef hdma_tim2_ch1;
 
@@ -32,6 +34,7 @@ static struct {
     WS2812_CONTROL_BLOCK *block;
     uint32_t block_len;
     uint32_t block_index;
+    uint32_t block_color;
 
     uint32_t offset;
     uint32_t color;
@@ -40,6 +43,24 @@ static struct {
     
     uint8_t transmit_complete_flag;
 } WS2812_DETECT_S_;
+
+
+/* 命令接收相关 */
+#include <stdlib.h>
+#include <stdio.h>
+typedef enum{
+    COMMAND_TRIGGER = 0,
+    COMMAND_DIRECT
+}WS2812_COMMAND_TYPE;
+static struct {
+    WS2812_COMMAND_TYPE command_type;
+    uint32_t led_num;
+    uint32_t block_num;
+    WS2812_CONTROL_BLOCK *block;
+    
+    uint32_t block_filled_index;
+}BLOCK_Command_Generator_buf = {0};
+
 
 /**
  * 函数：WS2812灯数据设置函数
@@ -113,6 +134,11 @@ void WS2812_Detect()
         uint32_t index = ++WS2812_DETECT_S_.index;
         if (index > WS2812_DETECT_S_.total) {
             memset(&WS2812_DETECT_S_, 0, sizeof(WS2812_DETECT_S_));
+
+            if (BLOCK_Command_Generator_buf.block != NULL) {
+                free(BLOCK_Command_Generator_buf.block);
+                BLOCK_Command_Generator_buf.block = NULL;
+            }
             return;
         }
 
@@ -124,17 +150,19 @@ void WS2812_Detect()
             case BLOCK:
                 WS2812_CONTROL_BLOCK *block = WS2812_DETECT_S_.block;
                 uint32_t block_index        = WS2812_DETECT_S_.block_index;
-                uint32_t block_color        = 0x000000;
+                uint32_t block_color        = WS2812_DETECT_S_.block_color;
 
                 uint8_t block_in_range_flag = block_index < WS2812_DETECT_S_.block_len;
 
                 while (block_in_range_flag && index >= block[block_index].start) {
                     block_color = block[block_index].color;
-                    WS2812_DETECT_S_.block_index++;
-                    block_in_range_flag = WS2812_DETECT_S_.block_index < WS2812_DETECT_S_.block_len;
+                    block_in_range_flag = ++block_index < WS2812_DETECT_S_.block_len;
                 }
 
-                WS2812_Set((uint8_t *)buf, block_color);
+                WS2812_DETECT_S_.block_index = block_index;
+                WS2812_DETECT_S_.block_color = block_color;
+
+                WS2812_Set((uint8_t *)buf+2, block_color);
                 
                 return;
 
@@ -143,7 +171,7 @@ void WS2812_Detect()
                 WS2812_DETECT_S_.color += reverse ? -WS2812_DETECT_S_.offset : WS2812_DETECT_S_.offset;
                 if (WS2812_DETECT_S_.color > 0xFF0000 || WS2812_DETECT_S_.color < 0) reverse = !reverse;
 
-                WS2812_Set((uint8_t *)buf, WS2812_DETECT_S_.color);
+                WS2812_Set((uint8_t *)buf+2, WS2812_DETECT_S_.color);
                 return;
         }
     }
@@ -198,21 +226,6 @@ void WS2812_Test_Colorful(uint32_t num, uint32_t color, uint32_t offset)
     memset(buf_2, 0, sizeof(buf_2));
 }
 
-/* 命令接收相关 */
-#include <stdlib.h>
-#include <stdio.h>
-typedef enum{
-    COMMAND_TRIGGER = 0,
-    COMMAND_DIRECT
-}WS2812_COMMAND_TYPE;
-static struct {
-    WS2812_COMMAND_TYPE command_type;
-    uint32_t led_num;
-    uint32_t block_num;
-    WS2812_CONTROL_BLOCK *block;
-    
-    uint32_t block_filled_index;
-}BLOCK_Command_Generator_buf = {0};
 
 
 // CRC-16 标准多项式
@@ -285,10 +298,6 @@ int8_t WS2812_BLOCK_Command_Generator(uint8_t* data, uint8_t data_len)
     
     BLOCK_Command_Generator_buf.block_filled_index = 0;
 
-    static char output_buffer[] = "Command_block generated:\ntype:0\n"; 
-    output_buffer[sizeof(output_buffer)-3] = BLOCK_Command_Generator_buf.command_type + '0';
-    extern UART_HandleTypeDef huart3;
-    HAL_UART_Transmit_DMA(&huart3, output_buffer, sizeof(output_buffer));
     WS2812_LOG("Command_block enerated:\ncommand_type: %d\nblock_num: %ld\nled_num: %ld\n", 
             (uint8_t)BLOCK_Command_Generator_buf.command_type, BLOCK_Command_Generator_buf.block_num, BLOCK_Command_Generator_buf.led_num);
 }
@@ -299,21 +308,8 @@ int8_t WS2812_BLOCK_Command_Fill(uint8_t* data, uint8_t data_len)
     if(index >= BLOCK_Command_Generator_buf.block_num)  return 0;
 
     BLOCK_Command_Generator_buf.block[index].start = *(uint32_t*)data;
-    BLOCK_Command_Generator_buf.block[index].color = *(data+4) | *(data+5) << 4 | *(data+6) << 8;
+    BLOCK_Command_Generator_buf.block[index].color = *(data+4) | *(data+5) << 8 | *(data+6) << 16;
 
-    static char output_buffer[] = "\nCommand_block received:0000:00:00\n"; 
-    output_buffer[sizeof(output_buffer)-6-3-3] = BLOCK_Command_Generator_buf.block[index].start /1000 % 10 + '0';
-    output_buffer[sizeof(output_buffer)-5-3-3] = BLOCK_Command_Generator_buf.block[index].start /100 % 10 + '0';
-    output_buffer[sizeof(output_buffer)-4-3-3] = BLOCK_Command_Generator_buf.block[index].start /10 % 10 + '0';
-    output_buffer[sizeof(output_buffer)-3-3-3] = BLOCK_Command_Generator_buf.block[index].start % 10 + '0';
-    
-    output_buffer[sizeof(output_buffer)-3-3] = BLOCK_Command_Generator_buf.block_num % 10 + '0';
-    output_buffer[sizeof(output_buffer)-4-3] = BLOCK_Command_Generator_buf.block_num /10 % 10 + '0';
-    
-    output_buffer[sizeof(output_buffer)-3] = BLOCK_Command_Generator_buf.block_filled_index % 10 + '0';
-    output_buffer[sizeof(output_buffer)-4] = BLOCK_Command_Generator_buf.block_filled_index /10 % 10 + '0';
-    extern UART_HandleTypeDef huart3;
-    HAL_UART_Transmit_DMA(&huart3, output_buffer, sizeof(output_buffer));
     WS2812_LOG("Command_block received:\nstart_num: %d\ncolor: 0x%06X", 
             (uint8_t)BLOCK_Command_Generator_buf.block[index].start, BLOCK_Command_Generator_buf.block[index].color);
 
@@ -321,17 +317,13 @@ int8_t WS2812_BLOCK_Command_Fill(uint8_t* data, uint8_t data_len)
     if(BLOCK_Command_Generator_buf.block_filled_index == BLOCK_Command_Generator_buf.block_num &&
         BLOCK_Command_Generator_buf.command_type == COMMAND_DIRECT)
         {
-            const static char output_buffer2[] = "\nCommand_block apply!\n"; 
-            HAL_UART_Transmit_DMA(&huart3, output_buffer2, sizeof(output_buffer2));
-            WS2812_LOG("Command_block apply!");
-
             WS2812_START_by_BLOCK(
                 BLOCK_Command_Generator_buf.led_num,
                 BLOCK_Command_Generator_buf.block,
                 BLOCK_Command_Generator_buf.block_num
             );
 
-            
+            WS2812_LOG("Command_block apply!");
             return 1;
         }
     return 0;

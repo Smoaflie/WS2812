@@ -129,7 +129,7 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   const uint8_t c[] = "start.";
-  HAL_TIM_Base_Start_IT(&htim1);
+  // HAL_TIM_Base_Start_IT(&htim1);
   HAL_UARTEx_ReceiveToIdle_DMA(&huart3, receive_buf, sizeof(receive_buf));
   __HAL_DMA_DISABLE_IT((&huart3)->hdmarx, DMA_IT_HT);
   HAL_UART_Transmit(&huart3, c, sizeof(c), 10);
@@ -139,7 +139,7 @@ int main(void)
   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin,GPIO_PIN_SET);
   HAL_Delay(1000);
 
-  OLED_Init();
+  // OLED_Init();
   
   /* USER CODE END 2 */
 
@@ -147,31 +147,31 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   WS2812_INIT();
   HAL_Delay(100);
-  // WS2812_Turn_Off(10000);
-  WS2812_Test_Colorful(100, 0x00FF00, 0);
+  WS2812_Turn_Off(10000);
+  // WS2812_Test_Colorful(100, 0x00FF00, 0);
   
   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin,GPIO_PIN_RESET);
   
   while (1) {
     static uint16_t pos = 1,last_pos = 1;
-    // if(HAL_GPIO_ReadPin(KEY_1_GPIO_Port, KEY_1_Pin) == GPIO_PIN_RESET ||
-    //     HAL_GPIO_ReadPin(KEY_2_GPIO_Port, KEY_2_Pin) == GPIO_PIN_RESET)
-    // {
-    //   HAL_Delay(100);
-    //   if(HAL_GPIO_ReadPin(KEY_1_GPIO_Port, KEY_1_Pin) == GPIO_PIN_RESET)  pos++;
-    //   else if(HAL_GPIO_ReadPin(KEY_2_GPIO_Port, KEY_2_Pin) == GPIO_PIN_RESET)  pos--;
-    //   if(pos == 0)  pos = 1;
-    //     OLED_ShowChar(10, 10, (pos/1000%10)+'0', 12);
-    //     OLED_ShowChar(20, 10, (pos/100%10)+'0', 12);
-    //     OLED_ShowChar(30, 10, (pos/10%10)+'0', 12);
-    //     OLED_ShowChar(40, 10, (pos/1%10)+'0', 12);
-    //     OLED_Refresh();
-    // }
-    // else if(last_pos != pos)
-    // {
-    //   last_pos = pos;
-    //   WS2812_Test_Position(pos , 0xFF0000,1000);
-    // }
+    if(HAL_GPIO_ReadPin(KEY_1_GPIO_Port, KEY_1_Pin) == GPIO_PIN_RESET ||
+        HAL_GPIO_ReadPin(KEY_2_GPIO_Port, KEY_2_Pin) == GPIO_PIN_RESET)
+    {
+      HAL_Delay(100);
+      if(HAL_GPIO_ReadPin(KEY_1_GPIO_Port, KEY_1_Pin) == GPIO_PIN_RESET)  pos++;
+      else if(HAL_GPIO_ReadPin(KEY_2_GPIO_Port, KEY_2_Pin) == GPIO_PIN_RESET)  pos--;
+      if(pos == 0)  pos = 1;
+        // OLED_ShowChar(10, 10, (pos/1000%10)+'0', 12);
+        // OLED_ShowChar(20, 10, (pos/100%10)+'0', 12);
+        // OLED_ShowChar(30, 10, (pos/10%10)+'0', 12);
+        // OLED_ShowChar(40, 10, (pos/1%10)+'0', 12);
+        // OLED_Refresh();
+    }
+    else if(last_pos != pos)
+    {
+      last_pos = pos;
+      WS2812_Test_Position(pos , 0xFF0000,1000);
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
