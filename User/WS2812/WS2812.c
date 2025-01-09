@@ -18,22 +18,26 @@
     uint32_t htim_ch;                               \
     TIM_HandleTypeDef *htim;                        \
     DMA_HandleTypeDef *hdma_tim_ch;                 \
+    __IO uint32_t* CCR;                             \
     switch(channel)                                 \
     {                                               \
         case 0:                                     \
             htim        = &htim2;                   \
             hdma_tim_ch = &hdma_tim2_ch1;           \
             htim_ch     = TIM_CHANNEL_1;            \
+            CCR         = &htim->Instance->CCR1;    \
             break;                                  \
         case 1:                                     \
             htim        = &htim2;                   \
             hdma_tim_ch = &hdma_tim2_ch3;           \
             htim_ch     = TIM_CHANNEL_3;            \
+            CCR         = &htim->Instance->CCR3;    \
             break;                                  \
         case 2:                                     \
             htim        = &htim2;                   \
             hdma_tim_ch = &hdma_tim2_ch2_ch4;       \
             htim_ch     = TIM_CHANNEL_2;            \
+            CCR         = &htim->Instance->CCR2;    \
             break;                                  \
         default:                                    \
             break;                                  \
@@ -51,7 +55,7 @@
 */
 #define buffer_len  28
 #define buffer_addr_offset (buffer_len%24/2)
-#define transmit_channel_num 1
+#define transmit_channel_num 3
 #define WS_H           60   // 1 码相对计数值
 #define WS_L           28   // 0 码相对计数值
 
@@ -143,6 +147,7 @@ void WS2812_INIT()
         WS2812_CHANNEL_PARAMS_GET(i);
         // 初始化-利用HAL库快速配置寄存器
         HAL_TIM_PWM_Start_DMA(htim, htim_ch, (const uint32_t *)WS2812_DETECT_S_[i].buf_1, buffer_len + 1);
+        WS2812_DETECT_S_[i].buf_addr_to_be_transmit = (const uint32_t)WS2812_DETECT_S_[i].buf_1;
     }
 
     WS2812_LOG_INIT();
@@ -177,14 +182,14 @@ void WS2812_DMA_TC_CALLBACK(uint8_t channel)
     /* 这里提供的是基于Stm32f103c8t6的HAL库的代码 */
     WS2812_CHANNEL_PARAMS_GET(channel);
     // 清理PWM比较器值
-    htim->Instance->CCR1 = 0;
+    *CCR = 0;
 }
 // 循环执行，用于自动处理发送请求
 void WS2812_Detect()
 {
     for(int i = 0; i < transmit_channel_num; i++)
     {
-        if (WS2812_DETECT_S_[i].mode == FREE) return;
+        if (WS2812_DETECT_S_[i].mode == FREE) continue;
 
         if (WS2812_DETECT_S_[i].transmit_complete_flag) {
             WS2812_DETECT_S_[i].transmit_complete_flag = 0;
@@ -192,10 +197,12 @@ void WS2812_Detect()
             uint32_t buf = WS2812_DETECT_S_[i].buf_addr_to_be_transmit;
             WS2812_TRANSMIT_TRIGGER(buf, buffer_len, i);
 
-            buf            = (const uint32_t)(WS2812_DETECT_S_[i].buf_addr_to_be_transmit == (const uint32_t)WS2812_DETECT_S_[i].buf_1 ? WS2812_DETECT_S_[i].buf_2 : WS2812_DETECT_S_[i].buf_1);
+            WS2812_DETECT_S_[i].buf_addr_to_be_transmit = buf = 
+                (const uint32_t)(WS2812_DETECT_S_[i].buf_addr_to_be_transmit == (const uint32_t)WS2812_DETECT_S_[i].buf_1 ? WS2812_DETECT_S_[i].buf_2 : WS2812_DETECT_S_[i].buf_1);
             uint32_t index = ++WS2812_DETECT_S_[i].index;
             if (index > WS2812_DETECT_S_[i].total) {
-                memset(&WS2812_DETECT_S_, 0, sizeof(WS2812_DETECT_S_));
+                memset(&WS2812_DETECT_S_[i], 0, sizeof(WS2812_DETECT_S_[i]));
+                WS2812_DETECT_S_[i].buf_addr_to_be_transmit = (const uint32_t)WS2812_DETECT_S_[i].buf_1;
                 return;
             }
 
@@ -232,6 +239,7 @@ void WS2812_Detect()
                     return;
             }
         }
+        return;
     }
 }
 
@@ -243,6 +251,9 @@ static void WS2812_START_by_BLOCK(uint32_t WS2812_num, WS2812_CONTROL_BLOCK *blo
     WS2812_DETECT_S_[channel].mode      = BLOCK;
     WS2812_DETECT_S_[channel].block     = block;
     WS2812_DETECT_S_[channel].block_len = block_len;
+
+    WS2812_DETECT_S_[channel].index = 0;
+    WS2812_DETECT_S_[channel].block_index = 0;
 
     memset(WS2812_DETECT_S_[channel].buf_1, 0, sizeof(WS2812_DETECT_S_[channel].buf_1));
     memset(WS2812_DETECT_S_[channel].buf_2, 0, sizeof(WS2812_DETECT_S_[channel].buf_2));
