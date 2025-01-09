@@ -147,7 +147,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   WS2812_INIT();
   HAL_Delay(100);
-  WS2812_Turn_Off(10000);
+  WS2812_Turn_Off(10000, 0);
   // WS2812_Test_Colorful(100, 0x00FF00, 0);
   
   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin,GPIO_PIN_RESET);
@@ -170,7 +170,7 @@ int main(void)
     else if(last_pos != pos)
     {
       last_pos = pos;
-      WS2812_Test_Position(pos , 0xFF0000,1000);
+      WS2812_Test_Position(pos , 0xFF0000,1000, 0);
     }
     /* USER CODE END WHILE */
 
